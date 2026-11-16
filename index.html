@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1"
+    />
+    <meta name="theme-color" content="#0b1f3a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Pocket Pitch — flick a rugby ball onto your table</title>
+    <meta name="description" content="A 60-second tabletop rugby game in augmented reality. No download — just flick." />
+    <link rel="stylesheet" href="style.css" />
+
+    <!--
+      three.js is loaded from a CDN, pinned to r160.
+      To self-host instead, download build/three.module.js into ./vendor/ and change the URL below
+      to "./vendor/three.module.js".
+    -->
+    <script type="importmap">
+      { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <video id="cam" playsinline muted autoplay></video>
+    <canvas id="gl"></canvas>
+
+    <!-- Everything the player touches lives inside #overlay (it is also the WebXR DOM-overlay root). -->
+    <div id="overlay">
+      <div id="touch"></div>
+
+      <!-- ============ HUD (during play) ============ -->
+      <section id="hud" class="layer passthrough" hidden>
+        <header class="hud-top">
+          <div class="hud-left">
+            <div id="hud-title">Kick-Off</div>
+            <div id="hud-balls" aria-label="Balls"></div>
+          </div>
+          <div class="hud-center">
+            <div id="hud-score">0</div>
+            <div id="hud-timer" hidden>40</div>
+          </div>
+          <div class="hud-right">
+            <div id="hud-mult" class="chip" hidden>x2</div>
+          </div>
+        </header>
+
+        <footer class="hud-bottom">
+          <div id="hud-hint" class="hint" hidden></div>
+          <div class="hud-controls">
+            <button id="btn-replace" class="pill">Move pitch</button>
+            <div class="seg" id="seg-size" role="group" aria-label="Pitch size">
+              <button data-s="0.55">S</button>
+              <button data-s="0.75" class="on">M</button>
+              <button data-s="1">L</button>
+            </div>
+            <div class="seg" id="seg-height" role="group" aria-label="Pitch height" hidden>
+              <button id="h-down" aria-label="Lower pitch">&#9660;</button>
+              <button id="h-up" aria-label="Raise pitch">&#9650;</button>
+            </div>
+            <button id="btn-sound" class="pill">Sound on</button>
+            <button id="btn-exit" class="pill">Exit</button>
+          </div>
+        </footer>
+      </section>
+
+      <!-- ============ Placement ============ -->
+      <section id="screen-placing" class="layer passthrough" hidden>
+        <div class="place-top">
+          <h2 id="place-title">Scan your table</h2>
+          <p id="place-sub">Point your camera at a flat surface and move slowly.</p>
+        </div>
+        <div class="place-bottom">
+          <div class="seg" id="seg-size-place" role="group" aria-label="Pitch size">
+            <button data-s="0.55">S</button>
+            <button data-s="0.75" class="on">M</button>
+            <button data-s="1">L</button>
+          </div>
+          <div class="seg" id="seg-height-place" role="group" aria-label="Pitch height" hidden>
+            <button id="hp-down" aria-label="Lower pitch">&#9660;</button>
+            <button id="hp-up" aria-label="Raise pitch">&#9650;</button>
+          </div>
+          <button id="btn-place-exit" class="pill">Back</button>
+        </div>
+      </section>
+
+      <!-- ============ Coach mark (first flick) ============ -->
+      <div id="coach" class="coach" hidden>
+        <div class="swipe"><i></i></div>
+        <span>Flick up to throw</span>
+      </div>
+
+      <!-- ============ Toast ============ -->
+      <div id="toast" class="toast" hidden>
+        <strong id="toast-title"></strong>
+        <span id="toast-text"></span>
+      </div>
+
+      <!-- ============ Landing ============ -->
+      <section id="screen-landing" class="layer card-screen">
+        <div class="card">
+          <div class="logo" aria-label="Pocket Pitch">
+            <span>POCKET</span><span class="red">PITCH</span>
+          </div>
+          <p class="tag">A tiny rugby pitch on your table. Flick the ball. Hit the bins. Smash the tackle bags.</p>
+          <ul class="steps">
+            <li><b>1</b> Point at a table</li>
+            <li><b>2</b> Tap to drop the pitch</li>
+            <li><b>3</b> Flick the ball</li>
+          </ul>
+          <button id="btn-start" class="btn primary" disabled>Checking your device&hellip;</button>
+          <button id="btn-alt" class="btn ghost" hidden>Use camera mode instead</button>
+          <p id="cap-note" class="note"></p>
+        </div>
+      </section>
+
+      <!-- ============ Result ============ -->
+      <section id="screen-result" class="layer card-screen" hidden>
+        <div class="card">
+          <div id="res-kicker" class="kicker">Full time</div>
+          <h2 id="res-title">Kick-Off</h2>
+          <div id="res-stars" class="stars" aria-label="Stars"></div>
+          <div class="res-score"><span id="res-score">0</span><small>points</small></div>
+          <p id="res-msg" class="tag"></p>
+          <button id="btn-next" class="btn primary">Next challenge</button>
+          <button id="btn-retry" class="btn ghost">Try again</button>
+          <a id="btn-cta" class="btn link" hidden target="_blank" rel="noopener"></a>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
