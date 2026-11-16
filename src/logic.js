@@ -28,7 +28,7 @@ export const CHALLENGES = [
   {
     id: 'kickoff',
     title: 'Kick-Off',
-    blurb: 'Flick the ball into the bin. Quicker swipe = further.',
+    blurb: 'Flick the ball into the bin to score a try. Quicker swipe = further.',
     balls: 5,
     assist: 0.55, // gentle magnetism towards the (static) bin so a first flick feels good
     stars: [5, 15, 30],
@@ -52,7 +52,7 @@ export const CHALLENGES = [
   {
     id: 'posts',
     title: 'Through the Posts',
-    blurb: 'Smash the tackle bags, or lob it over the bar for a goal.',
+    blurb: 'Hit the tackle bags, or land a drop goal over the bar.',
     balls: 6,
     stars: [6, 16, 30],
     bins: [{ x: 0, z: -0.3, amp: 0.1, speed: 0.8, phase: 0.5, points: 5, color: 'navy' }],
@@ -65,7 +65,7 @@ export const CHALLENGES = [
   {
     id: 'whistle',
     title: 'Final Whistle',
-    blurb: '40 seconds. As many points as you can. Streaks multiply.',
+    blurb: '40 seconds. Tries, tackles, drop goals \u2014 streaks multiply.',
     balls: Infinity,
     time: 40,
     between: 0.35,

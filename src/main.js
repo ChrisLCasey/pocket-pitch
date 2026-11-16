@@ -12,6 +12,7 @@ import {
   yawForForward,
   phiFromLocalDir,
 } from './logic.js';
+import { PlaneTracker, coverCrop, procSize, quatToMat, grayFromRGBA } from './tracker.js';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -23,6 +24,7 @@ const CONFIG = {
   defaultScale: 0.75, // pitch scale: 1 = 0.56 m x 0.90 m
   fallbackDrop: 0.5, // camera-mode: assumed metres from phone down to the table
   sizes: { S: 0.55, M: 0.75, L: 1.0 },
+  fovY: 64, // vertical FOV of the virtual camera in camera mode (also used by the surface-lock tracker)
 };
 
 const COLORS = { navy: 0x12305a, red: 0xc8102e, white: 0xffffff, gold: 0xffc72c };
@@ -53,6 +55,9 @@ const el = {
   btnStart: $('btn-start'),
   btnAlt: $('btn-alt'),
   capNote: $('cap-note'),
+  hudTrack: $('hud-track'),
+  placeTrack: $('place-track'),
+  btnTrack: $('btn-track'),
 };
 
 const S = {
@@ -171,7 +176,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.xr.enabled = true;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.01, 20);
+const camera = new THREE.PerspectiveCamera(CONFIG.fovY, window.innerWidth / window.innerHeight, 0.01, 20);
 scene.add(camera);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x4a5a6a, 2.0)); // r160 uses physical light units, hence the larger numbers
 
@@ -216,10 +221,17 @@ function makePitchTexture() {
   line(110); line(h - 110); line(h / 2); line(300); line(h - 300);
   line(h / 2 - 90, [16, 14]); line(h / 2 + 90, [16, 14]);
   g.setLineDash([]);
-  g.fillStyle = 'rgba(255,255,255,.55)';
-  g.font = '900 34px system-ui, sans-serif';
+  g.fillStyle = 'rgba(255,255,255,.7)';
+  g.font = '900 54px system-ui, sans-serif';
   g.textAlign = 'center';
-  g.fillText('POCKET PITCH', w / 2, h - 52);
+  g.textBaseline = 'middle';
+  g.fillText('ENGLAND', w / 2, h - 55);
+  g.save();
+  g.translate(w / 2, 55);
+  g.rotate(Math.PI);
+  g.font = '900 30px system-ui, sans-serif';
+  g.fillText('POCKET PITCH', 0, 0);
+  g.restore();
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
@@ -278,34 +290,60 @@ pitch.add(posts);
 
 // ----- ball -----
 function makeBallTexture() {
+  // White rugby-union ball in England colours: grip dimples, navy seams/tips, red trim, "ENGLAND" lettering.
+  const W = 512, H = 256;
   const c = document.createElement('canvas');
-  c.width = 256; c.height = 128;
+  c.width = W; c.height = H;
   const g = c.getContext('2d');
-  g.fillStyle = '#a9501c';
-  g.fillRect(0, 0, 256, 128);
-  for (let i = 0; i < 700; i++) {
-    g.fillStyle = `rgba(0,0,0,${Math.random() * 0.09})`;
-    g.fillRect(Math.random() * 256, Math.random() * 128, 2, 2);
+  g.fillStyle = '#f5f5f2';
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(0,0,0,0.08)';
+  for (let i = 0; i < 2200; i++) {
+    g.beginPath();
+    g.arc(Math.random() * W, Math.random() * H, 1.1 + Math.random() * 0.6, 0, Math.PI * 2);
+    g.fill();
   }
-  g.fillStyle = '#f4efe6';
-  g.fillRect(0, 128 * 0.25 - 3, 256, 6);
-  g.fillRect(0, 128 * 0.75 - 3, 256, 6);
-  g.fillStyle = '#4a1e07';
-  for (let i = 0; i < 4; i++) g.fillRect(i * 64 - 1.5, 0, 3, 128);
-  g.fillStyle = '#f4efe6';
-  for (let y = 40; y < 90; y += 7) g.fillRect(-4, y, 10, 2);
+  // navy tips and red trim bands (u runs around the ball, v runs along its length)
+  g.fillStyle = '#12305a';
+  g.fillRect(0, 0, W, H * 0.1);
+  g.fillRect(0, H * 0.9, W, H * 0.1);
+  g.fillStyle = '#c8102e';
+  g.fillRect(0, H * 0.1, W, 9);
+  g.fillRect(0, H * 0.9 - 9, W, 9);
+  // four panel seams
+  g.fillStyle = '#12305a';
+  for (let i = 0; i < 4; i++) g.fillRect(i * (W / 4) - 2.5, 0, 5, H);
+  // lettering along the length of two opposite panels
+  g.fillStyle = '#12305a';
+  g.font = '900 30px system-ui, -apple-system, "Segoe UI", sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  for (const u of [W * 0.125, W * 0.625]) {
+    g.save();
+    g.translate(u, H / 2);
+    g.rotate(-Math.PI / 2);
+    g.fillText('ENGLAND', 0, 0);
+    g.restore();
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
   return tex;
 }
 const ballGroup = new THREE.Group(); // long axis = local +z
 {
+  // Superellipse profile: ~19 cm wide x ~29 cm long, with blunt rounded ends (not pointed like a gridiron ball).
+  const prof = [];
+  const N = 40, n = 2.3, Rb = 0.0245, Lb = 0.037;
+  for (let i = 0; i <= N; i++) {
+    const t = -1 + (2 * i) / N;
+    prof.push(new THREE.Vector2(Rb * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(t), n)), 1 / n), t * Lb));
+  }
   const body = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 32, 24),
-    new THREE.MeshStandardMaterial({ map: makeBallTexture(), roughness: 0.55 })
+    new THREE.LatheGeometry(prof, 36),
+    new THREE.MeshStandardMaterial({ map: makeBallTexture(), roughness: 0.5 })
   );
-  body.scale.set(0.024, 0.037, 0.024); // poles along y ...
-  body.rotation.x = Math.PI / 2; // ... then laid along z
+  body.rotation.x = Math.PI / 2; // lathe axis (y) laid along z
   ballGroup.add(body);
 }
 ballGroup.visible = false;
@@ -456,7 +494,7 @@ function buildTargets(world) {
   if (T.postLabel) { posts.remove(T.postLabel); disposeTree(T.postLabel); T.postLabel = null; }
   posts.visible = !!world.posts;
   if (world.posts) {
-    T.postLabel = makeTextSprite([{ text: 'GOAL +' + world.posts.points, size: 64, color: '#ffc72c' }], 0.16);
+    T.postLabel = makeTextSprite([{ text: 'DROP GOAL +' + world.posts.points, size: 56, color: '#ffc72c' }], 0.16);
     T.postLabel.position.set(0, WORLD.post.uprightH + 0.05, WORLD.post.z);
     posts.add(T.postLabel);
   }
@@ -494,7 +532,7 @@ pitch.add(fxGroup);
 const popups = [];
 const confetti = [];
 const confettiGeo = new THREE.PlaneGeometry(0.012, 0.007);
-const confettiMats = [COLORS.red, COLORS.white, COLORS.gold, 0x2fd26b].map(
+const confettiMats = [COLORS.red, COLORS.white, 0x2a5fb0, COLORS.red, COLORS.white].map(
   (c) => new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide })
 );
 
@@ -599,6 +637,7 @@ function gyroQuaternion(out) {
 }
 function onDeviceOrientation(e) {
   if (e.alpha == null || e.beta == null) return;
+  if (!S.hasGyro) { S.hasGyro = true; updateTrackUi(); }
   S.hasGyro = true;
   S.orient.alpha = e.alpha;
   S.orient.beta = e.beta;
@@ -606,9 +645,97 @@ function onDeviceOrientation(e) {
 }
 
 // ---------------------------------------------------------------------------
+// Surface lock (camera mode): estimate phone *translation* from the video so the pitch stays put.
+// The gyroscope supplies rotation; src/tracker.js tracks table texture to recover movement.
+// ---------------------------------------------------------------------------
+const TRACK = {
+  tracker: null,
+  canvas: null,
+  ctx: null,
+  gray: null,
+  w: 0,
+  h: 0,
+  lastT: 0,
+  R: new Float64Array(9),
+  target: new THREE.Vector3(),
+  quality: 'off', // off | good | weak | lost
+  on: true,
+};
+const _qRaw = new THREE.Quaternion();
+
+function initTracker() {
+  const { w, h } = procSize(window.innerWidth / window.innerHeight);
+  const keep = TRACK.tracker ? { ...TRACK.tracker.pos } : { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+  TRACK.canvas = TRACK.canvas || document.createElement('canvas');
+  TRACK.canvas.width = w;
+  TRACK.canvas.height = h;
+  TRACK.ctx = TRACK.canvas.getContext('2d', { willReadFrequently: true });
+  TRACK.gray = new Uint8Array(w * h);
+  TRACK.w = w;
+  TRACK.h = h;
+  TRACK.tracker = new PlaneTracker({ width: w, height: h, fovY: CONFIG.fovY, planeY: -S.drop });
+  TRACK.tracker.pos = keep;
+  TRACK.target.set(keep.x, keep.y, keep.z);
+  TRACK.quality = 'weak';
+  updateTrackUi();
+}
+
+function stopTracker() {
+  TRACK.tracker = null;
+  TRACK.quality = 'off';
+  TRACK.target.set(0, 0, 0);
+  camera.position.set(0, 0, 0);
+  updateTrackUi();
+}
+
+/** Feed one grayscale frame + the camera->world rotation (row-major 3x3). Used by the video loop and by tests. */
+function feedTracker(gray, R) {
+  if (!TRACK.tracker) return null;
+  const st = TRACK.tracker.update(gray, R);
+  TRACK.target.set(st.pos.x, st.pos.y, st.pos.z);
+  if (st.quality !== TRACK.quality) {
+    TRACK.quality = st.quality;
+    updateTrackUi();
+  }
+  return st;
+}
+
+function trackerStep(time) {
+  if (!TRACK.tracker || !TRACK.on || !S.stream || !S.hasGyro) return;
+  if (time - TRACK.lastT < 30) return; // ~30 fps is plenty
+  const v = el.cam;
+  if (v.readyState < 2 || !v.videoWidth) return;
+  TRACK.lastT = time;
+  const c = coverCrop(v.videoWidth, v.videoHeight, window.innerWidth / window.innerHeight); // same crop as object-fit: cover
+  TRACK.ctx.drawImage(v, c.sx, c.sy, c.sw, c.sh, 0, 0, TRACK.w, TRACK.h);
+  grayFromRGBA(TRACK.ctx.getImageData(0, 0, TRACK.w, TRACK.h).data, TRACK.gray);
+  gyroQuaternion(_qRaw); // unsmoothed rotation for the frame
+  quatToMat(_qRaw, TRACK.R);
+  feedTracker(TRACK.gray, TRACK.R);
+}
+
+const TRACK_TEXT = {
+  good: 'Surface lock: good',
+  weak: 'Surface lock: weak \u2014 move slowly',
+  lost: 'Surface lock lost \u2014 aim at the table',
+  off: 'Surface lock: off',
+};
+function updateTrackUi() {
+  const active = !!TRACK.tracker && S.hasGyro && S.mode === 'fallback';
+  const q = TRACK.on ? TRACK.quality : 'off';
+  for (const n of [el.hudTrack, el.placeTrack]) {
+    n.hidden = !active;
+    n.className = 'track ' + q;
+    n.textContent = TRACK_TEXT[q] || '';
+  }
+  el.btnTrack.hidden = !active;
+  el.btnTrack.textContent = TRACK.on ? 'Lock on' : 'Lock off';
+}
+
+// ---------------------------------------------------------------------------
 // Game wiring
 // ---------------------------------------------------------------------------
-const POP_LABEL = { bin: 'TRY!', dummy: 'SMASH!', goal: 'GOAL!' };
+const POP_LABEL = { bin: 'TRY!', dummy: 'TACKLED!', goal: 'DROP GOAL!' };
 const game = new Game(onGameEvent);
 let ballPop = 1;
 let ballSpin = 0;
@@ -906,14 +1033,15 @@ function updatePlacementXR(frame) {
 function updatePlacementFallback() {
   tableForward(_d);
   const dir = _f.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  const cp = camera.position;
   let x, z;
   if (dir.y < -0.12) {
-    const t = Math.min(-S.drop / dir.y, 2.2);
-    x = dir.x * t;
-    z = dir.z * t;
+    const t = Math.min((-S.drop - cp.y) / dir.y, 2.2);
+    x = cp.x + dir.x * t;
+    z = cp.z + dir.z * t;
   } else {
-    x = _d.x * 0.8;
-    z = _d.z * 0.8;
+    x = cp.x + _d.x * 0.8;
+    z = cp.z + _d.z * 0.8;
   }
   reticle.position.set(x, -S.drop, z);
   reticle.visible = true;
@@ -1094,6 +1222,7 @@ async function startFallback(withCamera) {
       el.cam.srcObject = S.stream;
       await el.cam.play().catch(() => {});
       el.cam.classList.add('on');
+      initTracker();
     } catch (err) {
       console.warn('camera unavailable', err);
       showToast('No camera', 'Running in preview mode instead.', 2600);
@@ -1106,6 +1235,7 @@ async function startFallback(withCamera) {
 
 function stopFallback() {
   window.removeEventListener('deviceorientation', onDeviceOrientation);
+  stopTracker();
   S.hasGyro = false;
   if (S.stream) {
     S.stream.getTracks().forEach((t) => t.stop());
@@ -1149,6 +1279,7 @@ bindSizeButtons('seg-size-place');
 function nudgeHeight(dy) {
   S.drop = Math.min(1.2, Math.max(0.15, S.drop - dy));
   if (S.placed) pitch.position.y = -S.drop;
+  if (TRACK.tracker) TRACK.tracker.setPlane(-S.drop);
 }
 $('h-up').addEventListener('click', () => nudgeHeight(0.04));
 $('h-down').addEventListener('click', () => nudgeHeight(-0.04));
@@ -1160,6 +1291,15 @@ $('btn-replace').addEventListener('click', () => {
 });
 $('btn-place-exit').addEventListener('click', exitToLanding);
 $('btn-exit').addEventListener('click', exitToLanding);
+el.btnTrack.addEventListener('click', () => {
+  TRACK.on = !TRACK.on;
+  if (TRACK.on && TRACK.tracker) {
+    TRACK.tracker.pos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    TRACK.tracker.resetMap();
+    TRACK.quality = 'weak';
+  }
+  updateTrackUi();
+});
 $('btn-sound').addEventListener('click', (e) => {
   sfx.on = !sfx.on;
   sfx.unlock();
@@ -1184,7 +1324,9 @@ el.btnAlt.addEventListener('click', () => {
 async function detectCapabilities() {
   let xr = false;
   try {
-    xr = !!(navigator.xr && (await navigator.xr.isSessionSupported('immersive-ar')));
+    // Never let a slow or silent XR check leave the Start button disabled.
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(false), 1500));
+    xr = !!(navigator.xr && (await Promise.race([navigator.xr.isSessionSupported('immersive-ar'), timeout])));
   } catch (_) { xr = false; }
   S.xrSupported = xr && window.isSecureContext;
   if (!window.isSecureContext) {
@@ -1217,6 +1359,10 @@ renderer.setAnimationLoop((time, frame) => {
   if (S.mode === 'fallback') {
     if (S.hasGyro) camera.quaternion.slerp(gyroQuaternion(_qTarget), 0.35);
     else camera.quaternion.copy(_qDesktop);
+    if (TRACK.tracker && TRACK.on) {
+      trackerStep(time);
+      camera.position.lerp(TRACK.target, 0.5); // light smoothing on top of the tracker output
+    }
   }
 
   if (S.screen === 'placing') {
@@ -1249,10 +1395,11 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+  if (TRACK.tracker) initTracker();
 });
 
 setScreen('landing');
 detectCapabilities();
 
 // Handy for debugging from the console / remote inspector.
-window.__pocketPitch = { game, S, scene, pitch, CHALLENGES };
+window.__pocketPitch = { game, S, scene, pitch, CHALLENGES, camera, TRACK, initTracker, feedTracker, updateTrackUi };

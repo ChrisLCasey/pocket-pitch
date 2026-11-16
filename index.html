@@ -9,8 +9,8 @@
     <meta name="theme-color" content="#0b1f3a" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>Pocket Pitch — flick a rugby ball onto your table</title>
-    <meta name="description" content="A 60-second tabletop rugby game in augmented reality. No download — just flick." />
+    <title>Pocket Pitch — England Rugby on your table</title>
+    <meta name="description" content="A 60-second tabletop England Rugby game in augmented reality. No download \u2014 just flick." />
     <link rel="stylesheet" href="style.css" />
 
     <!--
@@ -43,6 +43,7 @@
           </div>
           <div class="hud-right">
             <div id="hud-mult" class="chip" hidden>x2</div>
+            <div id="hud-track" class="track" hidden></div>
           </div>
         </header>
 
@@ -50,6 +51,7 @@
           <div id="hud-hint" class="hint" hidden></div>
           <div class="hud-controls">
             <button id="btn-replace" class="pill">Move pitch</button>
+            <button id="btn-track" class="pill" hidden>Lock on</button>
             <div class="seg" id="seg-size" role="group" aria-label="Pitch size">
               <button data-s="0.55">S</button>
               <button data-s="0.75" class="on">M</button>
@@ -70,6 +72,7 @@
         <div class="place-top">
           <h2 id="place-title">Scan your table</h2>
           <p id="place-sub">Point your camera at a flat surface and move slowly.</p>
+          <div><span id="place-track" class="track" hidden></span></div>
         </div>
         <div class="place-bottom">
           <div class="seg" id="seg-size-place" role="group" aria-label="Pitch size">
@@ -100,10 +103,11 @@
       <!-- ============ Landing ============ -->
       <section id="screen-landing" class="layer card-screen">
         <div class="card">
+          <div class="kicker">England Rugby</div>
           <div class="logo" aria-label="Pocket Pitch">
             <span>POCKET</span><span class="red">PITCH</span>
           </div>
-          <p class="tag">A tiny rugby pitch on your table. Flick the ball. Hit the bins. Smash the tackle bags.</p>
+          <p class="tag">A tiny rugby union pitch on your table. Flick the ball to score tries, hit the tackle bags and land drop goals over the posts.</p>
           <ul class="steps">
             <li><b>1</b> Point at a table</li>
             <li><b>2</b> Tap to drop the pitch</li>

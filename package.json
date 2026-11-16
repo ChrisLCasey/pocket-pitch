@@ -5,7 +5,7 @@
   "description": "Pocket Pitch — a WebAR tabletop rugby flick game. Static site, no build step.",
   "type": "module",
   "scripts": {
-    "test": "node test/logic.test.mjs",
+    "test": "node test/logic.test.mjs && node test/tracker.test.mjs",
     "start": "npx serve ."
   }
 }
